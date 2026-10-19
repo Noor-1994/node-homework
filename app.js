@@ -1,26 +1,30 @@
-const express = require("express");
-const timeRoutes = require("./routes/timeRoutes");
 
-const app = express();
+class ValidationError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = "ValidationError";
+    this.statusCode = 400;
+  }
+}
 
-app.use(express.json());
+class NotFoundError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = "NotFoundError";
+    this.statusCode = 404;
+  }
+}
 
-app.get("/", (req, res) => {
-  res.status(200).send("Hello, World!");
-});
+class UnauthorizedError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = "UnauthorizedError";
+    this.statusCode = 401;
+  }
+}
 
-app.post("/testpost", (req, res) => {
-  res.status(200).json({
-    message: "POST route works",
-  });
-});
-
-app.use("/api", timeRoutes);
-
-const port = process.env.PORT || 3000;
-
-const server = app.listen(port, () => {
-  console.log(`Server running on port ${port}`);
-});
-
-module.exports = { app, server };
+module.exports = {
+  ValidationError,
+  NotFoundError,
+  UnauthorizedError,
+};
