@@ -1,6 +1,6 @@
 const crypto = require("crypto");
 const util = require("util");
-const pool = require("../db/pg-pool");
+const prisma = require("../db/prisma");
 const { userSchema } = require("../validation/userSchema");
 
 const scrypt = util.promisify(crypto.scrypt);
@@ -51,17 +51,26 @@ const register = async (req, res, next) => {
 
     const hashedPassword = await hashPassword(value.password);
 
-    let result;
+    let user;
 
     try {
-      result = await pool.query(
-        `INSERT INTO users (email, name, hashed_password)
-         VALUES ($1, $2, $3)
-         RETURNING id, email, name`,
-        [value.email, value.name, hashedPassword]
-      );
+      user = await prisma.user.create({
+        data: {
+          name: value.name,
+          email: value.email,
+          hashedPassword,
+        },
+        select: {
+          id: true,
+          name: true,
+          email: true,
+        },
+      });
     } catch (err) {
-      if (err.code === "23505") {
+      if (
+        err.name === "PrismaClientKnownRequestError" &&
+        err.code === "P2002"
+      ) {
         return res.status(400).json({
           message: "Email already registered",
         });
@@ -69,8 +78,6 @@ const register = async (req, res, next) => {
 
       return next(err);
     }
-
-    const user = result.rows[0];
 
     global.user_id = user.id;
 
@@ -90,22 +97,19 @@ const logon = async (req, res, next) => {
     const normalizedEmail =
       typeof email === "string" ? email.trim().toLowerCase() : "";
 
-    const result = await pool.query(
-      "SELECT * FROM users WHERE email = $1",
-      [normalizedEmail]
-    );
+    const user = await prisma.user.findUnique({
+      where: { email: normalizedEmail },
+    });
 
-    if (result.rows.length === 0) {
+    if (!user) {
       return res.status(401).json({
         error: "Invalid email or password",
       });
     }
 
-    const user = result.rows[0];
-
     const passwordMatches = await comparePassword(
       password,
-      user.hashed_password
+      user.hashedPassword
     );
 
     if (!passwordMatches) {

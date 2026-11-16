@@ -1,4 +1,4 @@
-const pool = require("../db/pg-pool");
+const prisma = require("../db/prisma");
 const {
   taskSchema,
   patchTaskSchema,
@@ -16,14 +16,20 @@ const create = async (req, res, next) => {
       });
     }
 
-    const result = await pool.query(
-      `INSERT INTO tasks (title, is_completed, user_id)
-       VALUES ($1, $2, $3)
-       RETURNING id, title, is_completed`,
-      [value.title, value.isCompleted, global.user_id]
-    );
+    const task = await prisma.task.create({
+      data: {
+        title: value.title,
+        isCompleted: value.isCompleted,
+        userId: global.user_id,
+      },
+      select: {
+        id: true,
+        title: true,
+        isCompleted: true,
+      },
+    });
 
-    return res.status(201).json(result.rows[0]);
+    return res.status(201).json(task);
   } catch (err) {
     return next(err);
   }
@@ -31,14 +37,16 @@ const create = async (req, res, next) => {
 
 const index = async (req, res, next) => {
   try {
-    const result = await pool.query(
-      `SELECT id, title, is_completed
-       FROM tasks
-       WHERE user_id = $1`,
-      [global.user_id]
-    );
-
-    const tasks = result.rows;
+    const tasks = await prisma.task.findMany({
+      where: {
+        userId: global.user_id,
+      },
+      select: {
+        id: true,
+        title: true,
+        isCompleted: true,
+      },
+    });
 
     if (tasks.length === 0) {
       return res.status(404).json({
@@ -62,20 +70,25 @@ const show = async (req, res, next) => {
       });
     }
 
-    const result = await pool.query(
-      `SELECT id, title, is_completed
-       FROM tasks
-       WHERE id = $1 AND user_id = $2`,
-      [taskId, global.user_id]
-    );
+    const task = await prisma.task.findUnique({
+      where: {
+        id: taskId,
+        userId: global.user_id,
+      },
+      select: {
+        id: true,
+        title: true,
+        isCompleted: true,
+      },
+    });
 
-    if (result.rows.length === 0) {
+    if (!task) {
       return res.status(404).json({
-        message: "Task not found.",
+        message: "The task was not found.",
       });
     }
 
-    return res.status(200).json(result.rows[0]);
+    return res.status(200).json(task);
   } catch (err) {
     return next(err);
   }
@@ -101,34 +114,30 @@ const update = async (req, res, next) => {
       });
     }
 
-    const keys = Object.keys(value);
-
-    const columns = keys.map((key) =>
-      key === "isCompleted" ? "is_completed" : key
-    );
-
-    const setClauses = columns
-      .map((column, index) => `${column} = $${index + 1}`)
-      .join(", ");
-
-    const idParameter = `$${keys.length + 1}`;
-    const userParameter = `$${keys.length + 2}`;
-
-    const result = await pool.query(
-      `UPDATE tasks
-       SET ${setClauses}
-       WHERE id = ${idParameter} AND user_id = ${userParameter}
-       RETURNING id, title, is_completed`,
-      [...Object.values(value), taskId, global.user_id]
-    );
-
-    if (result.rows.length === 0) {
-      return res.status(404).json({
-        message: "Task not found.",
+    try {
+      const task = await prisma.task.update({
+        data: value,
+        where: {
+          id: taskId,
+          userId: global.user_id,
+        },
+        select: {
+          id: true,
+          title: true,
+          isCompleted: true,
+        },
       });
-    }
 
-    return res.status(200).json(result.rows[0]);
+      return res.status(200).json(task);
+    } catch (err) {
+      if (err.code === "P2025") {
+        return res.status(404).json({
+          message: "The task was not found.",
+        });
+      }
+
+      return next(err);
+    }
   } catch (err) {
     return next(err);
   }
@@ -144,20 +153,29 @@ const deleteTask = async (req, res, next) => {
       });
     }
 
-    const result = await pool.query(
-      `DELETE FROM tasks
-       WHERE id = $1 AND user_id = $2
-       RETURNING id, title, is_completed`,
-      [taskId, global.user_id]
-    );
-
-    if (result.rows.length === 0) {
-      return res.status(404).json({
-        message: "Task not found.",
+    try {
+      const task = await prisma.task.delete({
+        where: {
+          id: taskId,
+          userId: global.user_id,
+        },
+        select: {
+          id: true,
+          title: true,
+          isCompleted: true,
+        },
       });
-    }
 
-    return res.status(200).json(result.rows[0]);
+      return res.status(200).json(task);
+    } catch (err) {
+      if (err.code === "P2025") {
+        return res.status(404).json({
+          message: "The task was not found.",
+        });
+      }
+
+      return next(err);
+    }
   } catch (err) {
     return next(err);
   }

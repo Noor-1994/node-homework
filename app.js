@@ -1,5 +1,5 @@
 const express = require("express");
-const pool = require("./db/pg-pool");
+const prisma = require("./db/prisma");
 const timeRoutes = require("./routes/timeRoutes");
 const userRoutes = require("./routes/userRoutes");
 const taskRoutes = require("./routes/taskRoutes");
@@ -7,7 +7,6 @@ const authMiddleware = require("./middleware/auth");
 const notFound = require("./middleware/not-found");
 const errorHandler = require("./middleware/error-handler");
 
-// Keep the temporary login identity for this assignment.
 global.user_id = null;
 
 const app = express();
@@ -18,14 +17,16 @@ app.get("/", (req, res) => {
   res.status(200).send("Hello, World!");
 });
 
-// Check whether the application can connect to PostgreSQL.
+// Check database connection using Prisma.
 app.get("/health", async (req, res) => {
   try {
-    await pool.query("SELECT 1");
+    await prisma.$queryRaw`SELECT 1`;
     res.json({ status: "ok", db: "connected" });
   } catch (err) {
     res.status(500).json({
-      message: `db not connected, error: ${err.message}`,
+      status: "error",
+      db: "not connected",
+      error: err.message,
     });
   }
 });
@@ -36,17 +37,11 @@ app.post("/testpost", (req, res) => {
   });
 });
 
-// Existing routes from previous assignments.
 app.use("/api", timeRoutes);
 app.use("/api/users", userRoutes);
-
-// Protected task routes.
 app.use("/api/tasks", authMiddleware, taskRoutes);
 
-// Handle routes that do not exist.
 app.use(notFound);
-
-// Handle application errors.
 app.use(errorHandler);
 
 const port = process.env.PORT || 3000;
@@ -55,7 +50,6 @@ const server = app.listen(port, () => {
   console.log(`Server running on port ${port}`);
 });
 
-// Gracefully close the HTTP server and PostgreSQL connections.
 let isShuttingDown = false;
 
 async function shutdown(code = 0) {
@@ -74,8 +68,9 @@ async function shutdown(code = 0) {
 
     console.log("HTTP server closed.");
 
-    await pool.end();
-    console.log("PostgreSQL connection pool closed.");
+
+    await prisma.$disconnect();
+    console.log("Prisma disconnected.");
   } catch (err) {
     console.error("Error during shutdown:", err);
     code = 1;
