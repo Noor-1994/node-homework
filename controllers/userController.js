@@ -51,10 +51,8 @@ const register = async (req, res, next) => {
 
     const hashedPassword = await hashPassword(value.password);
 
-    let user;
-
-    try {
-      user = await prisma.user.create({
+    const result = await prisma.$transaction(async (tx) => {
+      const newUser = await tx.user.create({
         data: {
           name: value.name,
           email: value.email,
@@ -66,26 +64,65 @@ const register = async (req, res, next) => {
           email: true,
         },
       });
-    } catch (err) {
-      if (
-        err.name === "PrismaClientKnownRequestError" &&
-        err.code === "P2002"
-      ) {
-        return res.status(400).json({
-          message: "Email already registered",
-        });
-      }
 
-      return next(err);
-    }
+      const welcomeTaskData = [
+        {
+          title: "Complete your profile",
+          userId: newUser.id,
+          priority: "medium",
+        },
+        {
+          title: "Add your first task",
+          userId: newUser.id,
+          priority: "high",
+        },
+        {
+          title: "Explore the app",
+          userId: newUser.id,
+          priority: "low",
+        },
+      ];
 
-    global.user_id = user.id;
+      await tx.task.createMany({
+        data: welcomeTaskData,
+      });
+
+      const welcomeTasks = await tx.task.findMany({
+        where: {
+          userId: newUser.id,
+          title: {
+            in: welcomeTaskData.map((task) => task.title),
+          },
+        },
+        select: {
+          id: true,
+          title: true,
+          isCompleted: true,
+          userId: true,
+          priority: true,
+        },
+      });
+
+      return {
+        user: newUser,
+        welcomeTasks,
+      };
+    });
+
+    global.user_id = result.user.id;
 
     return res.status(201).json({
-      name: user.name,
-      email: user.email,
+      user: result.user,
+      welcomeTasks: result.welcomeTasks,
+      transactionStatus: "success",
     });
   } catch (err) {
+    if (err.code === "P2002") {
+      return res.status(400).json({
+        error: "Email already registered",
+      });
+    }
+
     return next(err);
   }
 };
