@@ -1,19 +1,37 @@
 
+require("dotenv").config();
+
 const express = require("express");
+const cookieParser = require("cookie-parser");
+const helmet = require("helmet");
+const { xss } = require("express-xss-sanitizer");
+const rateLimiter = require("express-rate-limit");
+
 const prisma = require("./db/prisma");
 const timeRoutes = require("./routes/timeRoutes");
 const userRoutes = require("./routes/userRoutes");
 const taskRoutes = require("./routes/taskRoutes");
 const analyticsRoutes = require("./routes/analyticsRoutes");
-const authMiddleware = require("./middleware/auth");
+const jwtMiddleware = require("./middleware/jwtMiddleware");
 const notFound = require("./middleware/not-found");
 const errorHandler = require("./middleware/error-handler");
 
-global.user_id = null;
-
 const app = express();
 
+app.set("trust proxy", 1);
+
+app.use(
+  rateLimiter({
+    windowMs: 15 * 60 * 1000,
+    max: 100,
+  }),
+);
+
+app.use(helmet());
+
 app.use(express.json());
+app.use(cookieParser());
+app.use(xss());
 
 app.get("/", (req, res) => {
   res.status(200).send("Hello, World!");
@@ -41,8 +59,8 @@ app.post("/testpost", (req, res) => {
 
 app.use("/api", timeRoutes);
 app.use("/api/users", userRoutes);
-app.use("/api/tasks", authMiddleware, taskRoutes);
-app.use("/api/analytics", authMiddleware, analyticsRoutes);
+app.use("/api/tasks", jwtMiddleware, taskRoutes);
+app.use("/api/analytics", jwtMiddleware, analyticsRoutes);
 
 app.use(notFound);
 app.use(errorHandler);
